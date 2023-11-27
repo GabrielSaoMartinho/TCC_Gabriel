@@ -1,0 +1,114 @@
+import numpy as np
+import pandas as pd
+import os
+from sklearn.model_selection import train_test_split
+from sklearn.svm import SVC
+import joblib
+
+
+pastas = [
+   r"C:\Users\gabis\OneDrive\Área de Trabalho\treino_3\cima baixo\dados",
+   r"C:\Users\gabis\OneDrive\Área de Trabalho\treino_3\parado\dados",
+   r"C:\Users\gabis\OneDrive\Área de Trabalho\treino_3\andando\dados",
+   r"C:\Users\gabis\OneDrive\Área de Trabalho\treino_3\frente tras\dados"
+]
+dados = np.zeros((len(pastas), 1250, 4000))
+
+
+for idx, pasta in enumerate(pastas):
+   for i in range(1, 1251):
+       file_path = os.path.join(pasta, f"dados_{str(i).zfill(4)}.csv")
+
+
+       try:
+           for encoding in ["utf-8", "latin1", "utf-16"]:
+               try:
+                   df = pd.read_csv(file_path, encoding=encoding)
+                   amostras = df.iloc[:, 1].values
+                   dados[idx, i-1, :] = amostras
+                   break
+
+
+               except UnicodeDecodeError:
+                   pass
+
+
+       except Exception as e:
+           print("Erro ao ler o arquivo:", file_path)
+           print("Mensagem de erro:", str(e))
+           print("----------------------------------------")
+print("dados lidos")
+X_train_list, X_test_list, y_train_list, y_test_list = [], [], [], []
+for idx, _ in enumerate(pastas):
+   X = dados[idx].reshape((1250, 4000))
+   y = np.full(1250, idx)
+
+
+   X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=250/1250, random_state=42, stratify=y)
+   X_train_list.append(X_train)
+   X_test_list.append(X_test)
+   y_train_list.append(y_train)
+   y_test_list.append(y_test)
+
+
+X_train = np.vstack(X_train_list)
+X_test = np.vstack(X_test_list)
+y_train = np.hstack(y_train_list)
+y_test = np.hstack(y_test_list)
+
+
+model = SVC(kernel='rbf', C=97)
+model.fit(X_train, y_train)
+
+
+modelo_filename = "modelo_TCC_final.pkl"
+joblib.dump(model, modelo_filename)
+
+
+y_pred = model.predict(X_test)
+
+
+rotulos_descricoes = {
+   0: "Movendo a mão para cima e para baixo",
+   1: "Parado",
+   2: "Andando",
+   3: "Movendo a mão para frente e para trás"
+}
+
+
+rotulos = np.unique(y_test)
+estatisticas = {}
+for rotulo in rotulos:
+   acertos = np.sum((y_pred == rotulo) & (y_test == rotulo))
+   suposicoes = np.sum(y_pred == rotulo)
+   confusoes = {}
+   for outro_rotulo in rotulos:
+       if outro_rotulo != rotulo:
+           confusoes[outro_rotulo] = np.sum((y_pred == outro_rotulo) & (y_test == rotulo))
+   estatisticas[rotulo] = {'Acertos': acertos, 'Suposicoes': suposicoes, 'Confusoes': confusoes}
+
+
+for rotulo, estatistica in estatisticas.items():
+   acertos = estatistica['Acertos']
+   suposicoes = estatistica['Suposicoes']
+   total = np.sum(y_test == rotulo)
+   porcentagem_acertos = acertos / total * 100
+   porcentagem_erros = 100 - porcentagem_acertos
+   descricao_rotulo = rotulos_descricoes[rotulo]
+   confusoes = estatistica['Confusoes']
+  print("—————————————————————————————————————————————————————")
+   print(f"( {descricao_rotulo} ): {porcentagem_acertos:.2f}% de acertos e {porcentagem_erros:.2f}% de erros")
+   for outro_rotulo, quantidade in confusoes.items():
+       descricao_outro_rotulo = rotulos_descricoes[outro_rotulo]
+       print(f" → Confundiu com {descricao_outro_rotulo}: {quantidade} vezes")
+   print(f" → Quantidade de acertos: {acertos}/250")
+   print(f" → Total de suposições: {suposicoes}")
+
+
+accuracy = np.sum(y_pred == y_test) / len(y_test)
+
+
+print("—————————————————————————————————————————————————————")
+print("Acurácia do modelo:", f"{accuracy * 100:.2f}%")
+print("—————————————————————————————————————————————————————")
+
