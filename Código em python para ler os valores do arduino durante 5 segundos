@@ -1,0 +1,20 @@
+import serial
+import time
+
+
+porta_serial = 'COM4'
+baud_rate = 115200
+conexao = serial.Serial(porta_serial, baud_rate)
+
+
+lista=[]
+init_time = time.time()
+count = 0
+
+
+while time.time() - init_time < 5:
+   dados = conexao.readline()
+   dados = dados.decode(errors='ignore').strip()
+   lista.append(dados)
+   count += 1
+print(count)
