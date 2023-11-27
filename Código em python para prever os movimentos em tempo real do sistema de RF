@@ -1,0 +1,83 @@
+import sys
+import time
+from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QLabel
+from PyQt5.QtCore import QTimer
+import pyqtgraph as pg
+import serial
+from collections import deque
+from joblib import load
+import numpy as np
+
+porta_serial = 'COM4'
+baud_rate = 115200
+
+conexao = serial.Serial(porta_serial, baud_rate)
+
+app = QApplication(sys.argv)
+window = QMainWindow()
+central_widget = QWidget()
+layout = QVBoxLayout(central_widget)
+window.setCentralWidget(central_widget)
+plot_widget = pg.PlotWidget()
+layout.addWidget(plot_widget)
+window.show()
+
+prediction_label = QLabel("Movimento Previsto: N/A")
+layout.addWidget(prediction_label)
+
+max_data_length = 4000
+x_vals = deque(maxlen=max_data_length)
+y_vals = deque(maxlen=max_data_length)
+timestamps = deque(maxlen=max_data_length)
+curve = plot_widget.plot()
+
+plot_widget.setYRange(0, 1000)
+
+space_pressed = False
+
+model = load(r"C:\Users\gabis\PycharmProjects\pythonProject_final_TCC\modelo_TCC_final.pkl")
+
+rotulos_descricoes = {
+   0: "Movendo a mão para cima e para baixo",
+   1: "parado",
+   2: "andando",
+   3: "Movendo a mão para frente e para trás",
+}
+
+def update_plot():
+   curve.setData(x_vals, y_vals)
+
+prediction_frequency = 10
+step_counter = 0
+
+def read_data():
+   global step_counter
+   while conexao.in_waiting > 0:
+       dados = conexao.readline().decode().strip()
+       try:
+           valor = float(dados) 
+           timestamp = time.time()
+           x_vals.append(timestamp)
+           y_vals.append(valor)
+           timestamps.append(timestamp)
+
+           step_counter += 1
+
+           if len(y_vals) >= max_data_length and step_counter % prediction_frequency == 0:
+               ultimos_dados = list(y_vals)[-max_data_length:] 
+               entrada = np.array(ultimos_dados).reshape(1, -1)  
+               movimento_previsto = model.predict(entrada)[0] 
+
+               rotulo_previsto = rotulos_descricoes[movimento_previsto]
+               prediction_label.setText(f"Movimento Previsto: {rotulo_previsto}")
+
+       except ValueError:
+           pass
+   if x_vals:  
+       update_plot()
+
+timer = QTimer()
+timer.timeout.connect(read_data)
+timer.start(0)
+
+sys.exit(app.exec_())
