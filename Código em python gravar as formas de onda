@@ -1,0 +1,177 @@
+import sys
+import time
+from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QLabel
+from PyQt5.QtCore import QTimer, Qt
+import pyqtgraph as pg
+import serial
+from collections import deque
+import csv
+import os
+import matplotlib.pyplot as plt
+import numpy as np
+
+porta_serial = 'COM4'
+baud_rate = 115200
+
+conexao = serial.Serial(porta_serial, baud_rate)
+
+app = QApplication(sys.argv)
+window = QMainWindow()
+central_widget = QWidget()
+layout = QVBoxLayout(central_widget)
+window.setCentralWidget(central_widget)
+plot_widget = pg.PlotWidget()
+layout.addWidget(plot_widget)
+window.show()
+
+status_label = QLabel("Dados salvos: NÃO")
+layout.addWidget(status_label)
+
+max_data_length = 4000
+x_vals = deque(maxlen=max_data_length)
+y_vals = deque(maxlen=max_data_length)
+timestamps = deque(maxlen=max_data_length)
+curve = plot_widget.plot()
+
+plot_widget.setYRange(0, 1023)
+
+space_pressed = False
+
+def salvar_dados(y_vals, timestamps, folder_path):
+   existing_files = [name for name in os.listdir(folder_path) if name.endswith(".csv")]
+   if existing_files:
+       existing_numbers = []
+       for name in existing_files:
+           try:
+               number = int(name.split("_")[1].split(".")[0])
+               existing_numbers.append(number)
+           except (ValueError, IndexError):
+               pass
+       if existing_numbers:
+           last_number = max(existing_numbers)
+           new_number = last_number + 1
+       else:
+           new_number = 1
+   else:
+       new_number = 1
+
+   first_timestamp = timestamps[0]
+   standardized_timestamps = [timestamp - first_timestamp for timestamp in timestamps]
+
+   csv_file_name = f"dados_{new_number:04d}.csv"
+   csv_file_path = os.path.join(folder_path, csv_file_name)
+   try:
+       with open(csv_file_path, 'w', newline='') as file:
+           writer = csv.writer(file)
+           writer.writerow(['Tempo', 'Tensão'])
+           for timestamp, value in zip(standardized_timestamps, y_vals):
+               writer.writerow([timestamp, value])
+       status_label.setText("Dados salvos: SIM")
+   except Exception as e:
+       print(f"Erro ao salvar os dados: {str(e)}")
+       status_label.setText("Dados salvos: NÃO")
+
+def salvar_forma_de_onda(y_vals, folder_path, graph_name):
+   y_vals = np.array(y_vals)
+   y_vals = y_vals[y_vals != 1.6]
+
+   x_vals = np.arange(1, min(len(y_vals) + 1, 4001))
+
+   existing_files = [name for name in os.listdir(folder_path) if name.startswith(graph_name)]
+   if existing_files:
+       existing_numbers = []
+       for name in existing_files:
+           try:
+               number = int(name.split("_")[-1].split(".")[0])
+               existing_numbers.append(number)
+           except (ValueError, IndexError):
+               pass
+       if existing_numbers:
+           last_number = max(existing_numbers)
+           new_number = last_number + 1
+       else:
+           new_number = 1
+   else:
+       new_number = 1
+
+   graph_file_name = f"{graph_name}_{new_number:04d}.png"
+   graph_file_path = os.path.join(folder_path, graph_file_name)
+   try:
+       plt.figure()
+       plt.plot(x_vals, y_vals, color='red')
+       plt.xlabel('Pontos')
+       plt.ylabel('Resposta do Conversor Analógico-Digital')
+       plt.ylim([0, 1000])  
+       plt.title(graph_name)  
+       plt.savefig(graph_file_path)
+       plt.close()
+       print(f"Gráfico salvo: {graph_file_name}")
+   except Exception as e:
+       print(f"Erro ao salvar o gráfico: {str(e)}")
+
+def salvar_pseudocolor(y_vals, folder_path, graph_name):
+   existing_files = [name for name in os.listdir(folder_path) if name.startswith(graph_name)]
+   if existing_files:
+       existing_numbers = []
+       for name in existing_files:
+           try:
+               number = int(name.split("_")[-1].split(".")[0])
+               existing_numbers.append(number)
+           except (ValueError, IndexError):
+               pass
+       if existing_numbers:
+           last_number = max(existing_numbers)
+           new_number = last_number + 1
+       else:
+           new_number = 1
+   else:
+       new_number = 1
+
+   graph_file_name = f"{graph_name}_{new_number:04d}.png"
+   graph_file_path = os.path.join(folder_path, graph_file_name)
+   try:
+       plt.figure()
+       plt.imshow([y_vals], cmap='jet', aspect='auto', vmin=0, vmax=1023)
+       plt.axis('off')  
+       plt.savefig(graph_file_path, bbox_inches='tight', pad_inches=0)
+       plt.close()
+       print(f"Gráfico de pseudocolor salvo: {graph_file_name}")
+   except Exception as e:
+       print(f"Erro ao salvar o gráfico de pseudocolor: {str(e)}")
+
+def update_plot():
+   curve.setData(x_vals, y_vals)
+
+def read_data():
+   while conexao.in_waiting > 0:
+       dados = conexao.readline().decode().strip()
+       try:
+           valor = float(dados)
+           timestamp = time.time()
+           x_vals.append(timestamp)
+           y_vals.append(valor)
+           timestamps.append(timestamp)
+       except ValueError:
+           pass
+   if x_vals:  
+       update_plot()
+
+def keyReleaseEvent(event):
+   global space_pressed
+   if event.key() == Qt.Key_Space:
+       space_pressed = False
+       print("Botão de espaço liberado")
+       if y_vals:
+           salvar_forma_de_onda(list(y_vals), r"C:\Users\gabis\OneDrive\Área de Trabalho\dados_hoje", graph_name) 
+       else:
+           print("Nenhum dado disponível para salvar")
+
+graph_name = "Movendo a mão para frente e para trás"
+window.keyReleaseEvent = keyReleaseEvent
+
+timer = QTimer()
+timer.timeout.connect(read_data)
+timer.start(0)
+
+sys.exit(app.exec_())
+
